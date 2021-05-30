@@ -8,6 +8,7 @@
 """
 
 import argparse
+import json
 import logging
 
 import numpy as np
@@ -48,6 +49,7 @@ class ClassificationModel:
         }
         self._scaler = StandardScaler()
         self._classifier = None
+        self._evaluation_results = {}
 
     def fit_model(self, train_data, train_labels):
         self._scaler.fit(train_data)
@@ -56,14 +58,20 @@ class ClassificationModel:
         self._classifier = base_model(**self.model_configs["model_params"])
         self._classifier.fit(train_data, train_labels)
 
-    def evaluate_model(self, evaluation_data, evaluation_labels):
+    def evaluate_model(self, evaluation_data, evaluation_labels, mode):
         evaluation_data = self._scaler.transform(evaluation_data)
         test_calibrated_probs = self._classifier.predict_proba(
             evaluation_data)
         test_predictions = np.argmax(test_calibrated_probs, axis=1)
-        logging.info(classification_report(
+        evaluation_report = classification_report(
             evaluation_labels, test_predictions,
-            target_names=self.model_configs["class_names"]))
+            target_names=self.model_configs["class_names"], output_dict=True)
+        self._evaluation_results[mode] = evaluation_report
+
+    def save_results(self):
+        save_name = self.model_configs["model_name"] + ".json"
+        with open(save_name, 'w') as json_file:
+            json.dump(self._evaluation_results, json_file, indent=4)
 
 
 def main(train_images_path: str, val_images_path: str, test_images_path: str,
@@ -87,11 +95,13 @@ def main(train_images_path: str, val_images_path: str, test_images_path: str,
                  f" {model_configs['model_name']} classifier")
     classification_class.fit_model(train_data, train_labels)
     logging.info("Evaluating the training data")
-    classification_class.evaluate_model(train_data, train_labels)
+    classification_class.evaluate_model(train_data, train_labels, "train")
     logging.info("Evaluating the validation data")
-    classification_class.evaluate_model(val_data, val_labels)
+    classification_class.evaluate_model(val_data, val_labels, "val")
     logging.info("Evaluating the test data")
-    classification_class.evaluate_model(test_data, test_labels)
+    classification_class.evaluate_model(test_data, test_labels, "test")
+    logging.info("Saving evaluation results")
+    classification_class.save_results()
 
 
 if __name__ == '__main__':
